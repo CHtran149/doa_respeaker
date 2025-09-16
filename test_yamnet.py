@@ -1,67 +1,64 @@
-import sounddevice as sd
 import numpy as np
+import sounddevice as sd
 import tflite_runtime.interpreter as tflite
 import csv
 
-# =====================
+# =========================
 # Cấu hình
-# =====================
-MODEL_PATH = "lite-model_yamnet_tflite_1.tflite"
-CLASS_MAP_PATH = "yamnet_class_map.csv"
+# =========================
 SAMPLE_RATE = 16000
-TARGET_SAMPLES = 15600   # input chuẩn của YAMNet (~0.975s)
+DURATION = 1.0        # giây
+TARGET_SAMPLES = int(SAMPLE_RATE * DURATION)
 
-# =====================
-# Load class map
-# =====================
+# =========================
+# Load nhãn YAMNet
+# =========================
 class_names = []
-with open(CLASS_MAP_PATH, "r") as f:
+with open("yamnet_class_map.csv", "r") as f:
     reader = csv.reader(f)
     next(reader)  # bỏ header
     for row in reader:
-        class_names.append(row[2])  # cột Display Name
+        class_names.append(row[2])
 
-# =====================
-# Load model
-# =====================
-interpreter = tflite.Interpreter(model_path=MODEL_PATH)
+# =========================
+# Load model TFLite
+# =========================
+interpreter = tflite.Interpreter(model_path="yamnet.tflite")
 interpreter.allocate_tensors()
 input_details = interpreter.get_input_details()
 output_details = interpreter.get_output_details()
 
-# =====================
-# Ghi âm 1 giây
-# =====================
+# =========================
+# Ghi âm
+# =========================
 print("🎙️ Đang ghi âm...")
-waveform = sd.rec(int(SAMPLE_RATE), samplerate=SAMPLE_RATE, channels=1, dtype=np.float32)
+recording = sd.rec(int(SAMPLE_RATE * DURATION), samplerate=SAMPLE_RATE, channels=1, dtype="float32")
 sd.wait()
 print("✅ Ghi âm xong!")
 
-waveform = np.squeeze(waveform)  # (16000,)
+# Chuyển sang vector 1D
+waveform = np.squeeze(recording)
 
-# =====================
-# Chuẩn hóa thành 15600 mẫu
-# =====================
+# Chuẩn hóa độ dài đúng 15600 mẫu
 if len(waveform) > TARGET_SAMPLES:
     waveform = waveform[:TARGET_SAMPLES]
 elif len(waveform) < TARGET_SAMPLES:
     waveform = np.pad(waveform, (0, TARGET_SAMPLES - len(waveform)))
 
-# Thêm batch dimension
-waveform = np.expand_dims(waveform, axis=0)  # (1, 15600)
+# Đảm bảo float32
+waveform = waveform.astype(np.float32)
 
-# =====================
+# =========================
 # Chạy model
-# =====================
+# =========================
 interpreter.set_tensor(input_details[0]['index'], waveform)
 interpreter.invoke()
-predictions = interpreter.get_tensor(output_details[0]['index'])[0]  # (521,)
+predictions = interpreter.get_tensor(output_details[0]['index'])[0]
 
-# =====================
-# Lấy nhãn top-1
-# =====================
-top_index = np.argmax(predictions)
-top_score = predictions[top_index]
-top_class = class_names[top_index]
-
-print(f"🔊 Âm thanh dự đoán: {top_class} (score={top_score:.2f})")
+# =========================
+# Lấy top-5 kết quả
+# =========================
+top5_idx = np.argsort(predictions)[::-1][:5]
+print("\n🔊 Kết quả phân loại:")
+for i in top5_idx:
+    print(f"- {class_names[i]} ({predictions[i]:.2f})")
