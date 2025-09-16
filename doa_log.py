@@ -58,10 +58,11 @@ ax.set_theta_direction(-1)        # chiều kim đồng hồ
 line, = ax.plot([], [], 'ro-', linewidth=2)
 
 def update_compass(angle_deg):
-    angle_rad = np.radians(angle_deg)
-    line.set_data([angle_rad, angle_rad], [0, 1])
-    ax.set_title(f"Hướng âm thanh: {angle_deg:.1f}°")
-    plt.pause(0.01)
+    angle_rad = float(np.radians(angle_deg))   # ép về float để tránh mảng numpy
+    if not np.isnan(angle_rad):                # kiểm tra không bị NaN
+        line.set_data([angle_rad, angle_rad], [0, 1])
+        ax.set_title(f"Hướng âm thanh: {angle_deg:.1f}°")
+        plt.pause(0.01)
 
 # =========================
 # Callback xử lý audio
