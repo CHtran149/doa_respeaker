@@ -1,66 +1,67 @@
-import numpy as np
 import sounddevice as sd
-import scipy.signal
-import csv
+import numpy as np
 import tflite_runtime.interpreter as tflite
+import csv
 
-# =============================
+# =====================
 # Cấu hình
-# =============================
-SAMPLE_RATE = 16000  # YAMNet yêu cầu 16kHz
-DURATION = 2         # Ghi âm 2 giây
+# =====================
 MODEL_PATH = "lite-model_yamnet_tflite_1.tflite"
 CLASS_MAP_PATH = "yamnet_class_map.csv"
+SAMPLE_RATE = 16000
+TARGET_SAMPLES = 15600   # input chuẩn của YAMNet (~0.975s)
 
-# =============================
-# Hàm hỗ trợ
-# =============================
-def record_audio():
-    print("🎙️ Đang ghi âm...")
-    audio = sd.rec(int(DURATION * SAMPLE_RATE), samplerate=SAMPLE_RATE, channels=1, dtype="float32")
-    sd.wait()
-    print("✅ Ghi âm xong!")
-    return np.squeeze(audio)
+# =====================
+# Load class map
+# =====================
+class_names = []
+with open(CLASS_MAP_PATH, "r") as f:
+    reader = csv.reader(f)
+    next(reader)  # bỏ header
+    for row in reader:
+        class_names.append(row[2])  # cột Display Name
 
-def load_labels(path):
-    labels = []
-    with open(path, newline="") as f:
-        reader = csv.reader(f)
-        next(reader)  # bỏ dòng tiêu đề
-        for row in reader:
-            labels.append(row[2])  # cột thứ 3: display_name
-    return labels
+# =====================
+# Load model
+# =====================
+interpreter = tflite.Interpreter(model_path=MODEL_PATH)
+interpreter.allocate_tensors()
+input_details = interpreter.get_input_details()
+output_details = interpreter.get_output_details()
 
-# =============================
-# Main
-# =============================
-if __name__ == "__main__":
-    # 1. Load model
-    interpreter = tflite.Interpreter(model_path=MODEL_PATH)
-    interpreter.allocate_tensors()
-    input_details = interpreter.get_input_details()
-    output_details = interpreter.get_output_details()
+# =====================
+# Ghi âm 1 giây
+# =====================
+print("🎙️ Đang ghi âm...")
+waveform = sd.rec(int(SAMPLE_RATE), samplerate=SAMPLE_RATE, channels=1, dtype=np.float32)
+sd.wait()
+print("✅ Ghi âm xong!")
 
-    # 2. Load labels
-    class_names = load_labels(CLASS_MAP_PATH)
+waveform = np.squeeze(waveform)  # (16000,)
 
-    # 3. Ghi âm
-    waveform = record_audio()
+# =====================
+# Chuẩn hóa thành 15600 mẫu
+# =====================
+if len(waveform) > TARGET_SAMPLES:
+    waveform = waveform[:TARGET_SAMPLES]
+elif len(waveform) < TARGET_SAMPLES:
+    waveform = np.pad(waveform, (0, TARGET_SAMPLES - len(waveform)))
 
-# 4. Đưa vào model
-    waveform = waveform.astype(np.float32)
-    waveform = np.expand_dims(waveform, axis=0)  # (1, 32000)
+# Thêm batch dimension
+waveform = np.expand_dims(waveform, axis=0)  # (1, 15600)
 
-    interpreter.set_tensor(input_details[0]['index'], waveform)
-    interpreter.invoke()
+# =====================
+# Chạy model
+# =====================
+interpreter.set_tensor(input_details[0]['index'], waveform)
+interpreter.invoke()
+predictions = interpreter.get_tensor(output_details[0]['index'])[0]  # (521,)
 
+# =====================
+# Lấy nhãn top-1
+# =====================
+top_index = np.argmax(predictions)
+top_score = predictions[top_index]
+top_class = class_names[top_index]
 
-    # 5. Lấy output
-    scores = interpreter.get_tensor(output_details[0]['index'])[0]  # (N, 521 classes)
-    mean_scores = np.mean(scores, axis=0)
-
-    # 6. In top-5
-    top5 = mean_scores.argsort()[-5:][::-1]
-    print("\n🔊 Kết quả phân loại:")
-    for i in top5:
-        print(f"- {class_names[i]} ({mean_scores[i]:.3f})")
+print(f"🔊 Âm thanh dự đoán: {top_class} (score={top_score:.2f})")
