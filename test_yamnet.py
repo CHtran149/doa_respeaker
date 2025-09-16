@@ -47,12 +47,13 @@ if __name__ == "__main__":
     # 3. Ghi âm
     waveform = record_audio()
 
-    # 4. Đưa vào model
-    # YAMNet input shape: (None,) float32 waveform at 16kHz
+# 4. Đưa vào model
     waveform = waveform.astype(np.float32)
+    waveform = np.expand_dims(waveform, axis=0)  # (1, 32000)
 
     interpreter.set_tensor(input_details[0]['index'], waveform)
     interpreter.invoke()
+
 
     # 5. Lấy output
     scores = interpreter.get_tensor(output_details[0]['index'])[0]  # (N, 521 classes)
