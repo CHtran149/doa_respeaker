@@ -36,12 +36,11 @@ print("✅ Ghi âm xong!")
 # Reshape audio cho model
 audio = np.squeeze(audio)
 
-# YAMNet nhận input (N, 1) float32
-waveform = np.expand_dims(audio, axis=0).astype(np.float32)
+# YAMNet nhận input 1-D float32
+waveform = audio.astype(np.float32)
 
 # Run model
 interpreter.set_tensor(input_details[0]['index'], waveform)
-interpreter.invoke()
 
 predictions = interpreter.get_tensor(output_details[0]['index'])[0]  # (521 classes)
 
